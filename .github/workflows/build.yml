@@ -1,0 +1,55 @@
+name: Build und Release
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Java 25 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.1.0'
+
+      # Falls im Repository eine .zip liegt (Upload ohne Entpacken), wird sie hier automatisch entpackt.
+      - name: Projekt vorbereiten
+        id: prep
+        run: |
+          ZIP=$(ls ./*.zip 2>/dev/null | head -n1 || true)
+          if [ -n "$ZIP" ]; then
+            mkdir -p _project
+            unzip -q -o "$ZIP" -d _project
+            BUILDFILE=$(find _project -name build.gradle.kts | head -n1)
+            DIR=$(dirname "$BUILDFILE")
+          else
+            DIR="."
+          fi
+          echo "Projektordner: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Plugin bauen
+        working-directory: ${{ steps.prep.outputs.dir }}
+        run: gradle jar --no-daemon
+
+      - name: Release mit .jar erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: SimpleAntiCheat Build ${{ github.run_number }}
+          generate_release_notes: true
+          files: ${{ steps.prep.outputs.dir }}/build/libs/*.jar
